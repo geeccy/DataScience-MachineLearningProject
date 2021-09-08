@@ -1,0 +1,177 @@
+---
+title: "Machine Learning Project - Bicep Curls"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Introduction
+
+
+http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+Six participants wore accelerometers on the belt, forearm, arm, and dumbbell, and were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal of the project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. 
+
+You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. 
+
+Your submission for the Peer Review portion should consist of a link to a Github repo with your R markdown and compiled HTML file describing your analysis. Please constrain the text of the writeup to < 2000 words and the number of figures to be less than 5.
+
+
+
+Apply your machine learning algorithm to the 20 test cases available in the test data above and submit your predictions in appropriate format to the Course Project Prediction Quiz for automated grading. 
+
+
+### Load the library and datasets ###
+```{r}
+library(tidyverse)
+library(caret)
+
+training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+```
+
+
+### Data Cleansing ###
+
+After visually examining the datasets we can see they contain many variables which are NA and #DIV/0. The training algorithms won't be able to deal with these, so we will remove them. Some of the variables (e.g. max_roll_belt) are aggregates of the measurement window and only have values when new_window = yes.  The test dataset doesn't have any values where new_window=yes so these aggregate variable won't be used in prediction anyway, we will remove them too.
+```{r}
+#classe is the outcome we are trying to predict. Rename to 'class'.
+training$class <- factor(training$classe)
+
+#select only variables with valid values.
+training <- training %>% 
+  select(c(user_name, roll_belt, pitch_belt, yaw_belt, total_accel_belt, gyros_belt_x, gyros_belt_y, gyros_belt_z, accel_belt_x, accel_belt_y, accel_belt_z, magnet_belt_x, magnet_belt_y, magnet_belt_z, roll_arm, pitch_arm, yaw_arm, total_accel_arm, gyros_arm_x, 
+gyros_arm_y, gyros_arm_z, accel_arm_x, accel_arm_y, accel_arm_z, magnet_arm_x, magnet_arm_y, magnet_arm_z, roll_dumbbell, pitch_dumbbell, 
+yaw_dumbbell, total_accel_dumbbell, gyros_dumbbell_x, gyros_dumbbell_y, gyros_dumbbell_z, accel_dumbbell_x, accel_dumbbell_y, accel_dumbbell_z, magnet_dumbbell_x, magnet_dumbbell_y, magnet_dumbbell_z, roll_forearm, pitch_forearm, yaw_forearm, total_accel_forearm, 
+gyros_forearm_x, gyros_forearm_y, gyros_forearm_z, accel_forearm_x, accel_forearm_y, accel_forearm_z, magnet_forearm_x, magnet_forearm_y, 
+magnet_forearm_z, class))
+
+testing <- testing %>% 
+  select(c(user_name, roll_belt, pitch_belt, yaw_belt, total_accel_belt, gyros_belt_x, gyros_belt_y, gyros_belt_z, accel_belt_x, accel_belt_y, accel_belt_z, magnet_belt_x, magnet_belt_y, magnet_belt_z, roll_arm, pitch_arm, yaw_arm, total_accel_arm, gyros_arm_x, 
+gyros_arm_y, gyros_arm_z, accel_arm_x, accel_arm_y, accel_arm_z, magnet_arm_x, magnet_arm_y, magnet_arm_z, roll_dumbbell, pitch_dumbbell, 
+yaw_dumbbell, total_accel_dumbbell, gyros_dumbbell_x, gyros_dumbbell_y, gyros_dumbbell_z, accel_dumbbell_x, accel_dumbbell_y, accel_dumbbell_z, magnet_dumbbell_x, magnet_dumbbell_y, magnet_dumbbell_z, roll_forearm, pitch_forearm, yaw_forearm, total_accel_forearm, 
+gyros_forearm_x, gyros_forearm_y, gyros_forearm_z, accel_forearm_x, accel_forearm_y, accel_forearm_z, magnet_forearm_x, magnet_forearm_y, 
+magnet_forearm_z))
+
+#Check any NA values left
+sum(is.na(training))
+sum(is.na(testing))
+```
+
+
+### Build the validation set  
+
+The testing dataset doesn't have the outcomes, so we cannot use it to check the models.  Instead we will take 20% sample from our training dataset to be the validation dataset. This way we can have something to estimate out-of-sample errors.
+
+
+```{r}
+set.seed(333)
+inTrain <- createDataPartition(y=training$class, p = 0.8, list=FALSE)
+
+trainsub <- data.frame(training[inTrain,])
+validation <- data.frame(training[-inTrain,])
+```
+
+### Building Models ###
+
+We will try a few methods in the caret package and see how they perform on the training set.
+
+Create random forest model
+```{r}
+#Random forest
+set.seed(333)
+modelrf <- train(class~., method="rf", data=trainsub)
+```
+
+
+```{r}
+#system.time(modelrf <- train(class~., method="rf", data=trainsub))
+#user  system elapsed 
+#3253.97   19.25 3274.87
+#took almost 1 hour
+```
+
+Accuracy of random forest model on training and validation datasets
+```{r}
+pred_train_rf <- predict(modelrf, training[,-54])
+confusionMatrix(pred_train_rf, training[,54])
+#Accuracy 99.85%
+
+pred_valid_rf <- predict(modelrf, validation[,-54])
+confusionMatrix(pred_valid_rf, validation[,54])
+#Accuracy 99.26%
+
+```
+
+Create boosted tree mdoel
+```{r}
+set.seed(333)
+modelgbm <- train(class~., method="gbm", data=trainsub, verbose=FALSE)
+
+```
+
+The boosted tree model took over 22 minutes to build, according to the system.time function.
+```{R}
+#system.time(modelgbm <- train(class~., method="gbm", data=trainsub, verbose=FALSE))
+#user  system elapsed 
+#1354.81    2.55 1359.59 
+```
+
+
+Accuracy of boosted tree on training data
+```{r}
+pred_train_gbm <- predict(modelgbm, training[,-54])
+confusionMatrix(pred_train_gbm, training[,54])
+#Accuracy 97.1%
+
+pred_valid_gbm <- predict(modelgbm, validation[,-54])
+confusionMatrix(pred_valid_gbm, validation[,54])
+#Accuracy 96.1%
+
+```
+
+
+
+
+Create Bagged CART (classification and regression trees) model
+```{r}
+modelbag <- train(class~., method="treebag", data=trainsub)
+
+#system.time(modelbag <- train(class~., method="treebag", data=trainsub))
+#   user  system elapsed 
+# 251.45    0.03  251.61
+
+#just over 4 minutes
+```
+
+
+Accuracy of bagged tree
+```{r}
+pred_train_treebag <- predict(modelbag, training[,-54])
+confusionMatrix(pred_train_treebag, training[,54])
+#Accuracy 99.69%
+
+pred_valid_treebag <- predict(modelbag, validation[,-54])
+confusionMatrix(pred_valid_treebag, validation[,54])
+#Accuracy 98.55
+```
+
+
+
+
+```{r}
+#heatmap
+c <- confusionMatrix(pred_valid_treebag, validation[,54])$table
+
+c<-data.frame(c)
+
+ggplot(c, aes(x=Prediction, y=Reference, fill=Freq/3923)) + geom_tile() 
+
+
+```

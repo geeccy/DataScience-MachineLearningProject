@@ -4,31 +4,18 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ### Introduction
 
+Six participants wore accelerometers on the belt, forearm, arm, and dumbbell, and were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal of the project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set.  
 
-http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har
+The study is available [here](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har) and the datasets have been divided into [training](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and [testing](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv).  
 
-https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
-
-https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
-
-Six participants wore accelerometers on the belt, forearm, arm, and dumbbell, and were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal of the project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. 
-
-You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. 
-
-Your submission for the Peer Review portion should consist of a link to a Github repo with your R markdown and compiled HTML file describing your analysis. Please constrain the text of the writeup to < 2000 words and the number of figures to be less than 5.
-
-
-
-Apply your machine learning algorithm to the 20 test cases available in the test data above and submit your predictions in appropriate format to the Course Project Prediction Quiz for automated grading. 
-
+We will build several machine learning models from the CARET package and compare their performances. We will choose a model to produce predictions on the test dataset.  
 
 ### Load the library and datasets ###
-```{r}
+```{r warning=FALSE}
 library(tidyverse)
 library(caret)
 
@@ -36,10 +23,9 @@ training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-tr
 testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
 ```
 
-
 ### Data Cleansing ###
 
-After visually examining the datasets we can see they contain many variables which are NA and #DIV/0. The training algorithms won't be able to deal with these, so we will remove them. Some of the variables (e.g. max_roll_belt) are aggregates of the measurement window and only have values when new_window = yes.  The test dataset doesn't have any values where new_window=yes so these aggregate variable won't be used in prediction anyway, we will remove them too.
+After visually examining the datasets we can see they contain many variables which are NA and #DIV/0. The training algorithms won't be able to deal with these, so we will remove them. Some of the variables (e.g. max_roll_belt) are aggregates of the measurement window and only have values when new_window = yes. The test dataset doesn't have any values where new_window = yes so these aggregate variable won't be used in prediction anyway, we will remove them too.
 ```{r}
 #classe is the outcome we are trying to predict. Rename to 'class'.
 training$class <- factor(training$classe)
@@ -62,34 +48,32 @@ magnet_forearm_z))
 #Check any NA values left
 sum(is.na(training))
 sum(is.na(testing))
-```
+```  
 
 
 ### Build the validation set  
 
-The testing dataset doesn't have the outcomes, so we cannot use it to check the models.  Instead we will take 20% sample from our training dataset to be the validation dataset. This way we can have something to estimate out-of-sample errors.
-
+The testing dataset doesn't have the outcomes, so we cannot use it to check the models. We will take 20% sample from our training dataset to be the validation dataset. This can be used to estimate out-of-sample errors.
 
 ```{r}
 set.seed(333)
 inTrain <- createDataPartition(y=training$class, p = 0.8, list=FALSE)
-
-trainsub <- data.frame(training[inTrain,])
-validation <- data.frame(training[-inTrain,])
+trainsub <- data.frame(training[inTrain,])  #training subset
+validation <- data.frame(training[-inTrain,]) #validation subset
 ```
 
-### Building Models ###
+### Building Models
 
-We will try a few methods in the caret package and see how they perform on the training set.
+We will try a few methods in the caret package and see how they perform on both training and validation datasets.
 
-Create random forest model
+#### Create random forest model
 ```{r}
 #Random forest
 set.seed(333)
 modelrf <- train(class~., method="rf", data=trainsub)
 ```
 
-
+The model of 53 variables as 15699 observations took almost 1 hour to build.
 ```{r}
 #system.time(modelrf <- train(class~., method="rf", data=trainsub))
 #user  system elapsed 
@@ -97,81 +81,124 @@ modelrf <- train(class~., method="rf", data=trainsub)
 #took almost 1 hour
 ```
 
-Accuracy of random forest model on training and validation datasets
-```{r}
-pred_train_rf <- predict(modelrf, training[,-54])
-confusionMatrix(pred_train_rf, training[,54])
-#Accuracy 99.85%
+#### Accuracy of random forest model
 
+*Accuracy on training dataset*
+```{r}
+pred_train_rf <- predict(modelrf, trainsub[,-54])
+confusionMatrix(pred_train_rf, trainsub[,54])
+#Accuracy 100%
+```
+The random forest model gave a perfect accuracy of 100%, all the classes are correctly grouped in the confusion matrix, going down the diagonal.  
+
+*Accuracy on validation dataset*
+```{r}
 pred_valid_rf <- predict(modelrf, validation[,-54])
 confusionMatrix(pred_valid_rf, validation[,54])
 #Accuracy 99.26%
+```  
+The accuracy on the validation set only dropped slightly, and the confusion matrix still has a strong diagonal pattern.  
 
-```
+#### Create boosted tree mdoel
 
-Create boosted tree mdoel
+Next we will try a boosted tree model using the GBM method.
 ```{r}
 set.seed(333)
 modelgbm <- train(class~., method="gbm", data=trainsub, verbose=FALSE)
-
 ```
 
 The boosted tree model took over 22 minutes to build, according to the system.time function.
-```{R}
+```{r}
 #system.time(modelgbm <- train(class~., method="gbm", data=trainsub, verbose=FALSE))
 #user  system elapsed 
 #1354.81    2.55 1359.59 
 ```
 
+#### Accuracy of boosted tree model
 
-Accuracy of boosted tree on training data
+*Accuracy on training dataset*  
 ```{r}
-pred_train_gbm <- predict(modelgbm, training[,-54])
-confusionMatrix(pred_train_gbm, training[,54])
-#Accuracy 97.1%
+pred_train_gbm <- predict(modelgbm, trainsub[,-54])
+confusionMatrix(pred_train_gbm, trainsub[,54])
+#Accuracy 97.3%
+```
+The model has 97.3% accuracy, less than the random forest model. It still shows a diagonal pattern in the confusion matrix.
 
+*Accuracy on validation dataset*
+```{r}
 pred_valid_gbm <- predict(modelgbm, validation[,-54])
 confusionMatrix(pred_valid_gbm, validation[,54])
 #Accuracy 96.1%
-
 ```
+The accuracy dropped slightly to 96.1. The prediction for class C shows more variance.
 
 
-
-
-Create Bagged CART (classification and regression trees) model
+#### Create bagged tree model
 ```{r}
 modelbag <- train(class~., method="treebag", data=trainsub)
+```
 
+The model took just over 4 minutes to build.
+```{r}
 #system.time(modelbag <- train(class~., method="treebag", data=trainsub))
 #   user  system elapsed 
 # 251.45    0.03  251.61
-
-#just over 4 minutes
 ```
 
+#### Accuracy of bagged tree model
 
-Accuracy of bagged tree
+*Accuracy on training dataset*
 ```{r}
-pred_train_treebag <- predict(modelbag, training[,-54])
-confusionMatrix(pred_train_treebag, training[,54])
-#Accuracy 99.69%
+pred_train_treebag <- predict(modelbag, trainsub[,-54])
+confusionMatrix(pred_train_treebag, trainsub[,54])
+#Accuracy 99.9%
+```
+The model has accuracy over 99.9%, and shows strong diagonal pattern in the confusion matrix.
 
+
+*Accuracy on validation dataset*
+```{r}
 pred_valid_treebag <- predict(modelbag, validation[,-54])
 confusionMatrix(pred_valid_treebag, validation[,54])
-#Accuracy 98.55
+#Accuracy 98.5
+```
+Slight drop in out-of-sample accuracy but still a strong 98.5%.  
+
+
+### Model Comparison
+
+Tabulate the performance of each model.
+```{r}
+Accuracy_train_set <- c(
+  postResample(pred_train_rf, trainsub[,54])[1],
+  postResample(pred_train_gbm, trainsub[,54])[1],
+  postResample(pred_train_treebag, trainsub[,54])[1]
+)
+
+Accuracy_validation_set <- c(
+  postResample(pred_valid_rf, validation[,54])[1],
+  postResample(pred_valid_gbm, validation[,54])[1],
+  postResample(pred_valid_treebag, validation[,54])[1]
+)
+
+ModelName <- c("Random Forest", "Boosted Tree", "Bagged Tree")
+models <- data.frame(names, Accuracy_train_set, Accuracy_validation_set)
+models$Accuracy_drop <- models[,2] - models[,3]
+models$Build_time_in_minutes <- c(3253.97/60, 1354.81/60, 251.45/60)
+
+print(models)
+```
+Random forest is the winner in accuracy for both datasets, and also has the lowest out-of-sample error rate. However it was also the most time-consuming model to build. Bagged tree has slightly more accuracy than the Boosted tree, and required significantly less time to build. We will use *Random forest* as the model to produce predictions on the testing dataset.
+
+### Prediction on testing dataset
+Create prediction based on random forest model.
+```{r}
+pred_test_rf <- predict(modelrf, testing)
 ```
 
-
-
-
+In fact, if we run each of the models on the test dataset, they all produce the same predictions.
 ```{r}
-#heatmap
-c <- confusionMatrix(pred_valid_treebag, validation[,54])$table
-
-c<-data.frame(c)
-
-ggplot(c, aes(x=Prediction, y=Reference, fill=Freq/3923)) + geom_tile() 
-
-
+pred_test_gbm <- predict(modelgbm, testing)
+pred_test_treebag <- predict(modelbag, testing)
+t(data.frame(pred_test_rf, pred_test_gbm, pred_test_treebag))
 ```

@@ -3,7 +3,7 @@ title: "Machine Learning Project - Bicep Curls"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE cache=TRUE}
 ```
 
 ### Introduction
@@ -15,7 +15,7 @@ The study is available [here](http://web.archive.org/web/20161224072740/http:/gr
 We will build several machine learning models from the CARET package and compare their performances. We will choose a model to produce predictions on the test dataset.  
 
 ### Load the library and datasets ###
-```{r warning=FALSE}
+```{r library, warning=FALSE}
 library(tidyverse)
 library(caret)
 
@@ -26,7 +26,7 @@ testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-tes
 ### Data Cleansing ###
 
 After visually examining the datasets we can see they contain many variables which are NA and #DIV/0. The training algorithms won't be able to deal with these, so we will remove them. Some of the variables (e.g. max_roll_belt) are aggregates of the measurement window and only have values when new_window = yes. The test dataset doesn't have any values where new_window = yes so these aggregate variable won't be used in prediction anyway, we will remove them too.
-```{r}
+```{r dataclean}
 #classe is the outcome we are trying to predict. Rename to 'class'.
 training$class <- factor(training$classe)
 
@@ -55,7 +55,7 @@ sum(is.na(testing))
 
 The testing dataset doesn't have the outcomes, so we cannot use it to check the models. We will take 20% sample from our training dataset to be the validation dataset. This can be used to estimate out-of-sample errors.
 
-```{r}
+```{r dataset cache=TRUE}
 set.seed(333)
 inTrain <- createDataPartition(y=training$class, p = 0.8, list=FALSE)
 trainsub <- data.frame(training[inTrain,])  #training subset
@@ -67,42 +67,39 @@ validation <- data.frame(training[-inTrain,]) #validation subset
 We will try a few methods in the caret package and see how they perform on both training and validation datasets.
 
 #### Create random forest model
-```{r}
-#Random forest
-set.seed(333)
-modelrf <- train(class~., method="rf", data=trainsub)
-```
 
-The model of 53 variables as 15699 observations took almost 1 hour to build.
-```{r}
-#system.time(modelrf <- train(class~., method="rf", data=trainsub))
-#user  system elapsed 
-#3253.97   19.25 3274.87
-#took almost 1 hour
+We will use a faster implementation of random forest called *ranger*.
+```{r ranger cache=TRUE}
+library(ranger)
+set.seed(333)
+modelranger <- train(class~., method="ranger", data=trainsub, trControl=trainControl(number=4))
+
+#time to build model
+#   user  system elapsed 
+#1781.94    2.04  178.33 
 ```
 
 #### Accuracy of random forest model
 
 *Accuracy on training dataset*
 ```{r}
-pred_train_rf <- predict(modelrf, trainsub[,-54])
-confusionMatrix(pred_train_rf, trainsub[,54])
-#Accuracy 100%
+pred_train_ranger <- predict(modelranger, trainsub[,-54])
+confusionMatrix(pred_train_ranger, trainsub[,54])
 ```
 The random forest model gave a perfect accuracy of 100%, all the classes are correctly grouped in the confusion matrix, going down the diagonal.  
 
 *Accuracy on validation dataset*
 ```{r}
-pred_valid_rf <- predict(modelrf, validation[,-54])
-confusionMatrix(pred_valid_rf, validation[,54])
-#Accuracy 99.26%
-```  
+pred_valid_ranger <- predict(modelranger, validation[,-54])
+confusionMatrix(pred_valid_ranger, validation[,54])
+```
 The accuracy on the validation set only dropped slightly, and the confusion matrix still has a strong diagonal pattern.  
+
 
 #### Create boosted tree mdoel
 
 Next we will try a boosted tree model using the GBM method.
-```{r}
+```{r gbm cache=TRUE}
 set.seed(333)
 modelgbm <- train(class~., method="gbm", data=trainsub, verbose=FALSE)
 ```
@@ -134,7 +131,7 @@ The accuracy dropped slightly to 96.1. The prediction for class C shows more var
 
 
 #### Create bagged tree model
-```{r}
+```{r bag cache=TRUE}
 modelbag <- train(class~., method="treebag", data=trainsub)
 ```
 
@@ -167,38 +164,67 @@ Slight drop in out-of-sample accuracy but still a strong 98.5%.
 
 ### Model Comparison
 
-Tabulate the performance of each model.
-```{r}
+Summarise the performance of each model.
+```{r comparison}
+
+acc_train_ranger <- round(postResample(pred_train_ranger, trainsub[,54])[1], 4)
+acc_valid_ranger <- round(postResample(pred_valid_ranger, validation[,54])[1], 4)
+acc_drop_ranger <- round(acc_train_ranger - acc_valid_ranger,4)
+
+print(paste("Random Forest:", "Training set accuracy", acc_train_ranger, 
+            ", Validation set accuracy", acc_valid_ranger, 
+            ", Accuracy drop", acc_drop_ranger))
+
+acc_train_gbm <- round(postResample(pred_train_gbm, trainsub[,54])[1], 4)
+acc_valid_gbm <- round(postResample(pred_valid_gbm, validation[,54])[1], 4)
+acc_drop_gbm <- round(acc_train_gbm - acc_valid_gbm,4)
+
+print(paste("Boosted Tree:", "Training set accuracy", acc_train_gbm, 
+            ", Validation set accuracy", acc_valid_gbm, 
+            ", Accuracy drop", acc_drop_gbm))
+
+acc_train_treebag <- round(postResample(pred_train_treebag, trainsub[,54])[1], 4)
+acc_valid_treebag <- round(postResample(pred_valid_treebag, validation[,54])[1], 4)
+acc_drop_treebag <- round(acc_train_treebag - acc_valid_treebag,4)
+
+print(paste("Bagged Tree:", "Training set accuracy", acc_train_treebag, 
+            ", Validation set accuracy", acc_valid_treebag, 
+            ", Accuracy drop", acc_drop_treebag))
+
+```
+
+```{r eval=FALSE, include=FALSE}
 Accuracy_train_set <- c(
-  postResample(pred_train_rf, trainsub[,54])[1],
+  postResample(pred_train_ranger, trainsub[,54])[1],
   postResample(pred_train_gbm, trainsub[,54])[1],
   postResample(pred_train_treebag, trainsub[,54])[1]
 )
 
 Accuracy_validation_set <- c(
-  postResample(pred_valid_rf, validation[,54])[1],
+  postResample(pred_valid_ranger, validation[,54])[1],
   postResample(pred_valid_gbm, validation[,54])[1],
   postResample(pred_valid_treebag, validation[,54])[1]
 )
 
 ModelName <- c("Random Forest", "Boosted Tree", "Bagged Tree")
 models <- data.frame(names, Accuracy_train_set, Accuracy_validation_set)
+models <- table(names, Accuracy_train_set, Accuracy_validation_set)
 models$Accuracy_drop <- models[,2] - models[,3]
-models$Build_time_in_minutes <- c(3253.97/60, 1354.81/60, 251.45/60)
+#models$Build_time_in_minutes <- c(3253.97/60, 1354.81/60, 251.45/60)
 
 print(models)
 ```
-Random forest is the winner in accuracy for both datasets, and also has the lowest out-of-sample error rate. However it was also the most time-consuming model to build. Bagged tree has slightly more accuracy than the Boosted tree, and required significantly less time to build. We will use *Random forest* as the model to produce predictions on the testing dataset.
+Random forest is the winner in accuracy for both datasets, and also has the lowest out-of-sample error rate. However it was also the most time-consuming model to build. Bagged tree has slightly more accuracy than the Boosted tree, and required significantly less time to build. We will use *Random forest* as the model to produce predictions on the testing dataset.  
 
 ### Prediction on testing dataset
 Create prediction based on random forest model.
-```{r}
-pred_test_rf <- predict(modelrf, testing)
+```{r output}
+pred_test_ranger <- predict(modelranger, testing)
 ```
 
 In fact, if we run each of the models on the test dataset, they all produce the same predictions.
 ```{r}
 pred_test_gbm <- predict(modelgbm, testing)
 pred_test_treebag <- predict(modelbag, testing)
-t(data.frame(pred_test_rf, pred_test_gbm, pred_test_treebag))
+t(data.frame(pred_test_ranger, pred_test_gbm, pred_test_treebag))
 ```
